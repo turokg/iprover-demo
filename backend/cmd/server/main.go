@@ -1,41 +1,71 @@
-// Copyright 2013 The Gorilla WebSocket Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
 package main
 
 import (
+	"backend/internal/conf"
 	"backend/internal/ws"
+	"context"
 	"flag"
+	"fmt"
+	"github.com/gorilla/websocket"
 	"log"
 	"net/http"
+	"net/url"
 )
-
-var addr = flag.String("addr", ":8080", "http service address")
-
-func serveHome(w http.ResponseWriter, r *http.Request) {
-	log.Println(r.URL)
-	if r.URL.Path != "/" {
-		http.Error(w, "Not found", http.StatusNotFound)
-		return
-	}
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	http.ServeFile(w, r, "/Users/eyukorovin/iprover-demo/backend/cmd/server/home.html")
-}
 
 func main() {
 	flag.Parse()
-	hub := ws.NewHub()
-	go hub.Run()
-	http.HandleFunc("/", serveHome)
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		ws.ServeWs(hub, w, r)
+		ServeWs(w, r)
 	})
-	err := http.ListenAndServe(*addr, nil)
+	err := http.ListenAndServe(conf.Addr, nil)
 	if err != nil {
 		log.Fatal("ListenAndServe: ", err)
 	}
+}
+
+type Args struct {
+	inputParams string // passed as stdin to launched programs
+}
+
+func parseArgs(r *http.Request) (*Args, error) {
+	ur, err := url.ParseRequestURI(r.RequestURI)
+	if err != nil {
+		return nil, err
+	}
+	params, err := url.ParseQuery(ur.RawQuery)
+	if err != nil {
+		return nil, err
+	}
+	if len(params["message"]) != 1 {
+		return nil, fmt.Errorf("couldn't parse query params")
+	}
+	return &Args{
+		inputParams: params["message"][0],
+	}, err
+}
+
+func checkOrigin(r *http.Request) bool {
+	// TODO check origin properly
+	return true
+}
+
+func ServeWs(w http.ResponseWriter, r *http.Request) {
+	upgrader := websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+	}
+	upgrader.CheckOrigin = checkOrigin
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	ctx := context.Background()
+	client := ws.NewClient(ctx, conn)
+	args, err := parseArgs(r)
+	if err != nil {
+		log.Println("something wrong", err)
+		return
+	}
+	go client.Start(args.inputParams)
 }

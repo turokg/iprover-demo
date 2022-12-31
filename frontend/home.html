@@ -23,7 +23,7 @@ window.onload = function () {
             appendLog(item);
             return false
         }
-            conn = new WebSocket("ws://" + document.location.host + "/ws?message="+encodeURIComponent(msg.value));
+            conn = new WebSocket("ws://localhost:8080/ws?message="+encodeURIComponent(msg.value));
             conn.onclose = function (evt) {
                 var item = document.createElement("div");
                 item.innerHTML = "<b>Connection closed.</b>";

@@ -1,25 +1,26 @@
 package launcher
 
 import (
+	"backend/internal/conf"
 	"bufio"
 	"context"
 	"fmt"
 	"io"
 	"os/exec"
 	"syscall"
+	"time"
 )
 
 const (
-	path       = "/Users/eyukorovin/iprover-demo/iprover-stub/iprover"
-	terminator = "\n"
+	terminator = "\n\n"
 )
 
-func Launch(ctx context.Context, inputParams string) (chan string, error) {
+func Launch(ctx context.Context, inputParams string) (chan []byte, error) {
 	fmt.Println("launching process with args ", inputParams)
-	output := make(chan string)
+	output := make(chan []byte)
 
 	go func() {
-		cmd := exec.Command(path)
+		cmd := exec.Command(conf.BinPath)
 
 		stdout, _ := cmd.StdoutPipe()
 
@@ -32,7 +33,6 @@ func Launch(ctx context.Context, inputParams string) (chan string, error) {
 		fmt.Println(stdin)
 		_, err = io.WriteString(stdin, inputParams)
 		_, err = io.WriteString(stdin, terminator)
-		_, err = io.WriteString(stdin, terminator)
 		if err != nil {
 			fmt.Println("got error while writing", err)
 		}
@@ -40,13 +40,18 @@ func Launch(ctx context.Context, inputParams string) (chan string, error) {
 		scanner.Split(bufio.ScanLines)
 		for scanner.Scan() {
 			m := scanner.Text()
-			output <- m
-
+			output <- NewAppLog(m)
 			if ctx.Err() != nil {
 				cmd.Process.Signal(syscall.SIGINT)
+				output <- NewSysLog("sending SYGINT to the iProver")
 			}
+			go func() {
+				time.Sleep(conf.KillTimeout)
+				cmd.Process.Kill()
+			}()
 		}
 		cmd.Wait()
+		close(output)
 
 	}()
 	return output, nil
