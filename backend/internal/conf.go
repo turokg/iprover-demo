@@ -2,7 +2,6 @@ package internal
 
 import "time"
 
-// logic constants
 const (
 	Addr = ":8080"
 
