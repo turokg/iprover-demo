@@ -1,10 +1,9 @@
 package launcher
 
 import (
-	"backend/internal/conf"
+	"backend/internal"
 	"bufio"
 	"context"
-	"fmt"
 	"io"
 	"os/exec"
 	"syscall"
@@ -15,26 +14,45 @@ const (
 	terminator = "\n\n"
 )
 
-func Launch(ctx context.Context, inputParams string) (chan []byte, error) {
-	fmt.Println("launching process with args ", inputParams)
+func NewLauncher(logger internal.Logger) *Launcher {
+	return &Launcher{logger: logger}
+}
+
+type Launcher struct {
+	logger internal.Logger
+}
+
+func (l *Launcher) Launch(ctx context.Context, args LaunchArgs) (chan []byte, error) {
+	l.logger.WithField("args", args).Info(ctx, "launching process with args")
 	output := make(chan []byte)
 
 	go func() {
-		cmd := exec.Command(conf.BinPath)
+		cmd := exec.Command(internal.BinPath) // TODO add args
 
-		stdout, _ := cmd.StdoutPipe()
-
+		stdout, err := cmd.StdoutPipe()
 		stdin, err := cmd.StdinPipe()
 		if err != nil {
-			fmt.Println("got error while writing", err)
+			l.logger.Error(ctx, "got error while setting up pipes", err)
 		}
 
-		cmd.Start()
-		fmt.Println(stdin)
-		_, err = io.WriteString(stdin, inputParams)
+		err = cmd.Start()
+		if err != nil {
+			l.logger.Error(ctx, "couldn't start process", err)
+		}
+		_, err = io.WriteString(stdin, "hello world") // TODO read file
+		if err != nil {
+			l.logger.Error(ctx, "got error while writing to stdin", err)
+		}
 		_, err = io.WriteString(stdin, terminator)
 		if err != nil {
-			fmt.Println("got error while writing", err)
+			l.logger.Error(ctx, "got error while writing to stdin", err)
+		}
+		_, err = io.WriteString(stdin, terminator)
+		if err != nil {
+			l.logger.Error(ctx, "got error while writing to stdin", err)
+		}
+		if err != nil {
+			l.logger.Error(ctx, "got error while writing to stdin", err)
 		}
 		scanner := bufio.NewScanner(stdout)
 		scanner.Split(bufio.ScanLines)
@@ -46,7 +64,7 @@ func Launch(ctx context.Context, inputParams string) (chan []byte, error) {
 				output <- NewSysLog("sending SYGINT to the iProver")
 			}
 			go func() {
-				time.Sleep(conf.KillTimeout)
+				time.Sleep(internal.KillTimeout)
 				cmd.Process.Kill()
 			}()
 		}

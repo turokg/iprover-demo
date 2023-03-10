@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -26,6 +27,12 @@ func NewLog(runtime uint64, message string) Log {
 	return Log{RunTime: runtime, Message: message}
 }
 func main() {
+	num := flag.Int("n", 5, "# of iterations")
+	float := flag.String("float", "he", "string")
+	flag.Parse()
+	fmt.Println("launched with n", *num)
+	fmt.Println("launched with float", *float)
+
 	var loopNo uint64
 	logs := make(chan Log)
 	go handleMessages(logs)

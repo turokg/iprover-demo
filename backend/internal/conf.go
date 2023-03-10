@@ -1,4 +1,4 @@
-package conf
+package internal
 
 import "time"
 
@@ -13,5 +13,5 @@ const (
 	// StopWord stops execution, after received in the websocked
 	StopWord = "stop"
 	// BinPath application which is launched
-	BinPath = "/Users/eyukorovin/iprover-demo/iprover-stub/iprover"
+	BinPath = "/Users/eyukorovin/iprover/iprover-demo/iprover-stub/iprover"
 )
