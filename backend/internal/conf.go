@@ -16,5 +16,5 @@ const (
 	BinPath     = "/Users/eyukorovin/iprover/iprover/iproveropt"
 	ProblemsDir = "/Users/eyukorovin/iprover/iprover-demo/backend/problems/"
 
-	LaunchBuffer = 0 //TODO посмотри, наверно надо увеличить
+	LaunchBuffer = 100 //TODO посмотри, наверно надо увеличить
 )

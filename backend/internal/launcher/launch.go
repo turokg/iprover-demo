@@ -39,6 +39,7 @@ func (l *Launcher) Launch(ctx context.Context, args LaunchArgs) (chan []byte, er
 		if err != nil {
 			l.logger.Error(ctx, "couldn't start process", err)
 		}
+
 		//go func() {
 		//	time.Sleep(internal.KillTimeout)
 		//	cmd.Process.Kill()
@@ -52,6 +53,21 @@ func (l *Launcher) Launch(ctx context.Context, args LaunchArgs) (chan []byte, er
 		if err != nil {
 			l.logger.Error(ctx, "got error while closing to stdin", err)
 		}
+
+		go func() {
+			for {
+				select {
+				case <-ctx.Done():
+					err = cmd.Process.Signal(syscall.SIGINT)
+					output <- NewSysLog("sending SYGINT to the iProver")
+					if err != nil {
+						l.logger.Error(ctx, "error killing the process", err)
+					}
+					return
+				}
+			}
+		}()
+
 		scanner := bufio.NewScanner(stdout)
 		scanner.Split(bufio.ScanLines)
 		for scanner.Scan() {
@@ -59,11 +75,6 @@ func (l *Launcher) Launch(ctx context.Context, args LaunchArgs) (chan []byte, er
 			m := scanner.Text()
 			l.logger.WithField("text", m).Info(ctx, "got message from stdout")
 			output <- NewAppLog(m)
-			if ctx.Err() != nil {
-				cmd.Process.Signal(syscall.SIGINT)
-				output <- NewSysLog("sending SYGINT to the iProver")
-			}
-
 		}
 		l.logger.Info(ctx, "got out of cycle")
 		err = scanner.Err()

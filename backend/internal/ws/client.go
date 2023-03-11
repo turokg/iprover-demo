@@ -37,12 +37,11 @@ type client struct {
 	logger internal.Logger
 }
 
-func NewClient(ctx context.Context, conn *websocket.Conn, launch chan []byte, logger internal.Logger) Client {
-	ctx, cancel := context.WithTimeout(ctx, internal.RunTimeout)
+func NewClient(ctx context.Context, conn *websocket.Conn, launch chan []byte, logger internal.Logger, cancelFunc context.CancelFunc) Client {
 	return &client{
 		conn:   conn,
 		ctx:    ctx,
-		cancel: cancel,
+		cancel: cancelFunc,
 		wg:     &sync.WaitGroup{},
 		launch: launch,
 		logger: logger,

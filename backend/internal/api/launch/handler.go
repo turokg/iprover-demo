@@ -48,7 +48,7 @@ func New(logger internal.Logger, repo repository.Repo) api.Handler {
 }
 
 func (h *handler) Handle(w http.ResponseWriter, r *http.Request) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), internal.RunTimeout)
 
 	upgrader := websocket.Upgrader{
 		ReadBufferSize:  1024,
@@ -91,6 +91,6 @@ func (h *handler) Handle(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error(ctx, msg, err)
 		return
 	}
-	client := ws.NewClient(ctx, conn, msgs, h.logger)
+	client := ws.NewClient(ctx, conn, msgs, h.logger, cancel)
 	go client.Start()
 }
