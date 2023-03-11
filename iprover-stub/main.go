@@ -27,11 +27,9 @@ func NewLog(runtime uint64, message string) Log {
 	return Log{RunTime: runtime, Message: message}
 }
 func main() {
-	num := flag.Int("n", 5, "# of iterations")
-	float := flag.String("float", "he", "string")
+	num := flag.Bool("stdin", true, "# of iterations")
 	flag.Parse()
 	fmt.Println("launched with n", *num)
-	fmt.Println("launched with float", *float)
 
 	var loopNo uint64
 	logs := make(chan Log)
@@ -39,14 +37,16 @@ func main() {
 
 	var input string
 	var allInputs []string
-	scanner := bufio.NewScanner((os.Stdin))
-	for {
-		scanner.Scan()
+	scanner := bufio.NewScanner(os.Stdin)
+	logs <- NewLog(0, "started scanning")
+	for scanner.Scan() {
 		input = scanner.Text()
-		if len(input) == 0 {
-			break
-		}
+		logs <- NewLog(0, fmt.Sprintf("got line from stdin: %s", input))
+
 		allInputs = append(allInputs, input)
+	}
+	if err := scanner.Err(); err != nil {
+		logs <- NewLog(0, fmt.Sprintf("error reading standard input: %s", err.Error()))
 	}
 	logs <- NewLog(0, fmt.Sprintf("Starting. Read from stdin: %s", strings.Join(allInputs, "\n")))
 

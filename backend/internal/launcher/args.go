@@ -1,6 +1,7 @@
 package launcher
 
 type LaunchArgs struct {
-	Filename string
-	Params   map[string]string
+	ProblemID   string
+	ProblemText string
+	Params      map[string]string
 }
