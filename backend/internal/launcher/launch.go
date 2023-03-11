@@ -26,7 +26,7 @@ func (l *Launcher) Launch(ctx context.Context, args LaunchArgs) (chan []byte, er
 	output := make(chan []byte, internal.LaunchBuffer)
 
 	go func() {
-		cmd := exec.Command(internal.BinPath, "--stdin", "true") // TODO add args
+		cmd := exec.Command(internal.BinPath, "--stdin", "true", "--fof", "true") // TODO add args
 
 		stdout, err := cmd.StdoutPipe()
 		stdin, err := cmd.StdinPipe()

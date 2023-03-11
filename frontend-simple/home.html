@@ -24,7 +24,7 @@ window.onload = function () {
             return false
         }
             // conn = new WebSocket("ws://localhost:8080/ws?problemId="+encodeURIComponent(msg.value));
-        conn = new WebSocket("ws://localhost:8080/launch?problemId="+encodeURIComponent("problem.p"));
+        conn = new WebSocket("ws://localhost:8080/launch?problemId="+encodeURIComponent("SEU426+1.p"));
         conn.onclose = function (evt) {
                 var item = document.createElement("div");
                 item.innerHTML = "<b>Connection closed.</b>";
@@ -34,8 +34,9 @@ window.onload = function () {
             conn.onmessage = function (evt) {
                 var messages = evt.data.split('\n');
                 for (var i = 0; i < messages.length; i++) {
+                    var l = JSON.parse(messages[i])
                     var item = document.createElement("div");
-                    item.innerText = messages[i];
+                    item.innerText = l["message"];
                     appendLog(item);
                 }
             };
