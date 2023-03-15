@@ -9,21 +9,25 @@ import (
 	"os/exec"
 	"sync"
 	"syscall"
-	"time"
 )
 
-func NewLauncher(logger internal.Logger) *Launcher {
-	return &Launcher{logger: logger}
+func NewLauncher(logger internal.Logger, output chan internal.LogMessage) *Launcher {
+	return &Launcher{
+		logger: logger,
+		output: output,
+	}
 }
 
 type Launcher struct {
 	logger internal.Logger
+	output chan internal.LogMessage
 }
 
-func (l *Launcher) Launch(ctx context.Context, wg *sync.WaitGroup, args LaunchArgs, output chan []byte) {
+func (l *Launcher) Launch(ctx context.Context, wg *sync.WaitGroup, args internal.LaunchArgs) {
 	wg.Add(1)
 	defer func() { fmt.Println("FINISHED") }()
 	defer wg.Done()
+	defer close(l.output)
 
 	l.logger.WithField("problemID", args.ProblemID).Info(ctx, "launching process")
 
@@ -59,7 +63,7 @@ func (l *Launcher) Launch(ctx context.Context, wg *sync.WaitGroup, args LaunchAr
 					l.logger.Error(ctx, "error killing the process", err)
 				} else {
 					l.logger.Info(ctx, "sent SYGINT to the iProver")
-					output <- NewSysLog("sending SYGINT to the iProver")
+					l.output <- NewSysLog("sending SYGINT to the iProver")
 				}
 				return
 			}
@@ -70,19 +74,16 @@ func (l *Launcher) Launch(ctx context.Context, wg *sync.WaitGroup, args LaunchAr
 	scanner.Split(bufio.ScanLines)
 	for scanner.Scan() {
 		m := scanner.Text()
-		//l.logger.WithField("text", m).Info(ctx, "got message from stdout") // TODO debug
-		output <- NewAppLog(m)
+		l.output <- NewProcessLog(m)
 	}
 	l.logger.Info(ctx, "finished reading from stdin")
-	err = scanner.Err()
-	if err != nil {
+
+	if err = scanner.Err(); err != nil {
 		l.logger.Error(ctx, "error while scanning", err)
 	}
 	err = cmd.Wait()
 	if err != nil {
 		l.logger.Error(ctx, "error while waiting for cmd", err)
 	}
-	close(output)
-	time.Sleep(5 * time.Second)
 	l.logger.Info(ctx, "finished launch")
 }

@@ -4,7 +4,7 @@ import (
 	"backend/internal"
 	"bytes"
 	"context"
-	"log"
+	"encoding/json"
 	"net/http"
 	"sync"
 	"time"
@@ -20,10 +20,6 @@ const (
 	pingPeriod = (pongWait * 9) / 10
 )
 
-//type Client interface {
-//	Start()
-//}
-
 var (
 	newline = []byte{'\n'}
 	space   = []byte{' '}
@@ -32,9 +28,9 @@ var (
 type Client struct {
 	conn   *websocket.Conn
 	cancel context.CancelFunc
-	wg     *sync.WaitGroup
-	launch chan []byte
-	logger internal.Logger
+	//wg       *sync.WaitGroup
+	messages chan internal.LogMessage
+	logger   internal.Logger
 }
 
 func checkOrigin(r *http.Request) bool {
@@ -44,7 +40,7 @@ func checkOrigin(r *http.Request) bool {
 func NewClient(
 	w http.ResponseWriter,
 	r *http.Request,
-	launch chan []byte,
+	messages chan internal.LogMessage,
 	logger internal.Logger,
 ) (*Client, error) {
 	upgrader := websocket.Upgrader{
@@ -55,18 +51,10 @@ func NewClient(
 	conn, err := upgrader.Upgrade(w, r, nil)
 
 	return &Client{
-		conn:   conn,
-		wg:     &sync.WaitGroup{},
-		launch: launch,
-		logger: logger,
+		conn:     conn,
+		messages: messages,
+		logger:   logger,
 	}, err
-}
-
-func (c *Client) Close() {
-	c.cancel()
-	c.wg.Wait()
-	close(c.launch)
-	c.conn.Close()
 }
 
 func (c *Client) Read(ctx context.Context, wg *sync.WaitGroup, cancelFunc context.CancelFunc) {
@@ -83,7 +71,7 @@ func (c *Client) Read(ctx context.Context, wg *sync.WaitGroup, cancelFunc contex
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("error: %v", err)
+				c.logger.Error(ctx, "error while reading from websocket", err)
 			}
 			break
 		}
@@ -101,22 +89,23 @@ func (c *Client) Write(ctx context.Context, wg *sync.WaitGroup) {
 
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
+		if err := c.conn.WriteMessage(websocket.CloseMessage, []byte{}); err != nil {
+			c.logger.Error(ctx, "error while writing message", err)
+		}
+		if err := c.conn.Close(); err != nil {
+			c.logger.Error(ctx, "error closing connection", err)
+		}
 		ticker.Stop()
 	}()
+
 	for {
 		select {
-		case message, ok := <-c.launch:
-			//c.logger.WithField("message", string(message)).Info(c.ctx, "sending message")
-			err := c.conn.SetWriteDeadline(time.Now().Add(writeWait))
-			if err != nil {
+		case message, ok := <-c.messages:
+			if err := c.conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
 				c.logger.Error(ctx, "error while setting deadline", err)
 			}
 			if !ok {
-				// The hub closed the channel.
-				err := c.conn.WriteMessage(websocket.CloseMessage, []byte{})
-				if err != nil {
-					c.logger.Error(ctx, "error while writing message", err)
-				}
+				// channel is closed
 				return
 			}
 
@@ -125,20 +114,17 @@ func (c *Client) Write(ctx context.Context, wg *sync.WaitGroup) {
 				c.logger.Error(ctx, "error while getting writer", err)
 				return
 			}
-			_, err = w.Write(message)
-			if err != nil {
+
+			bytesMsg, _ := json.Marshal(message)
+			if _, err = w.Write(bytesMsg); err != nil {
 				c.logger.Error(ctx, "error while writing message", err)
 			}
 
 			// Add queued chat messages to the current websocket message.
-			n := len(c.launch)
+			n := len(c.messages)
 			for i := 0; i < n; i++ {
-				_, err = w.Write(newline)
-				if err != nil {
-					c.logger.Error(ctx, "error while writing newline", err)
-				}
-				_, err = w.Write(<-c.launch)
-				if err != nil {
+				bytesMsg, _ = json.Marshal(c.messages)
+				if _, err = w.Write(bytesMsg); err != nil {
 					c.logger.Error(ctx, "error while writing message", err)
 				}
 			}
@@ -148,7 +134,9 @@ func (c *Client) Write(ctx context.Context, wg *sync.WaitGroup) {
 				return
 			}
 		case <-ticker.C:
-			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := c.conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
+				c.logger.Error(ctx, "error while setting deadline", err)
+			}
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}

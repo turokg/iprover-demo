@@ -13,8 +13,8 @@ import (
 	"sync"
 )
 
-func parseArgs(r *http.Request) (launcher.LaunchArgs, error) {
-	args := launcher.LaunchArgs{}
+func parseArgs(r *http.Request) (internal.LaunchArgs, error) {
+	args := internal.LaunchArgs{}
 	ur, err := url.ParseRequestURI(r.RequestURI)
 	if err != nil {
 		return args, err
@@ -28,11 +28,6 @@ func parseArgs(r *http.Request) (launcher.LaunchArgs, error) {
 	}
 	args.ProblemID = params["problemId"][0]
 	return args, err
-}
-
-func checkOrigin(r *http.Request) bool {
-	// TODO check origin properly
-	return true
 }
 
 type handler struct {
@@ -49,6 +44,7 @@ func New(logger internal.Logger, repo repository.Repo) api.Handler {
 
 func (h *handler) Handle(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(context.Background(), internal.RunTimeout)
+	// TODO как разберешься с дожиданием горутин - вызови cancel() в defer
 
 	args, err := parseArgs(r)
 	if err != nil {
@@ -67,7 +63,9 @@ func (h *handler) Handle(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error(ctx, msg, err)
 		return
 	}
-	output := make(chan []byte, internal.LaunchBuffer)
+	output := make(chan internal.LogMessage, internal.LaunchBuffer)
+	l := launcher.NewLauncher(h.logger, output)
+
 	client, err := ws.NewClient(w, r, output, h.logger)
 	if err != nil {
 		msg := "unable to upgrade to webSockets"
@@ -77,10 +75,8 @@ func (h *handler) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	l := launcher.NewLauncher(h.logger)
-
 	wg := &sync.WaitGroup{}
-	go l.Launch(ctx, wg, args, output)
+	go l.Launch(ctx, wg, args)
 	go client.Read(ctx, wg, cancel)
 	go client.Write(ctx, wg)
 	wg.Wait()

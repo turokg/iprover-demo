@@ -3,12 +3,10 @@ MVP
 repo (local files)
 - [x] get-problem-text
 - [x] get-problems
-
 api
 - [x] featured-problems
 - [x] launch [problem name]
-
-- [ ] починить прерывание
+- [x] починить прерывание
 
 front
 - [ ] панелька с файликами

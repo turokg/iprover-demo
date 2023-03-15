@@ -7,7 +7,7 @@ const (
 
 	// RunTimeout task is killed after it
 	RunTimeout = time.Second * 10 * 60
-	// KillTimeout wait after SIGINT, then process is killed
+	// KillTimeout wait after SIGINT, then Process is killed
 	KillTimeout = time.Second * 700
 	// StopWord stops execution, after received in the websocked
 	StopWord = "stop"
