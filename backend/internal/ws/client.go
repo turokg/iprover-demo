@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"log"
+	"net/http"
 	"sync"
 	"time"
 
@@ -19,53 +20,64 @@ const (
 	pingPeriod = (pongWait * 9) / 10
 )
 
-type Client interface {
-	Start()
-}
+//type Client interface {
+//	Start()
+//}
 
 var (
 	newline = []byte{'\n'}
 	space   = []byte{' '}
 )
 
-type client struct {
+type Client struct {
 	conn   *websocket.Conn
-	ctx    context.Context
 	cancel context.CancelFunc
 	wg     *sync.WaitGroup
 	launch chan []byte
 	logger internal.Logger
 }
 
-func NewClient(ctx context.Context, conn *websocket.Conn, launch chan []byte, logger internal.Logger, cancelFunc context.CancelFunc) Client {
-	return &client{
+func checkOrigin(r *http.Request) bool {
+	// TODO check origin properly
+	return true
+}
+func NewClient(
+	w http.ResponseWriter,
+	r *http.Request,
+	launch chan []byte,
+	logger internal.Logger,
+) (*Client, error) {
+	upgrader := websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+	}
+	upgrader.CheckOrigin = checkOrigin
+	conn, err := upgrader.Upgrade(w, r, nil)
+
+	return &Client{
 		conn:   conn,
-		ctx:    ctx,
-		cancel: cancelFunc,
 		wg:     &sync.WaitGroup{},
 		launch: launch,
 		logger: logger,
-	}
+	}, err
 }
 
-func (c *client) Start() {
-	go c.readPump()
-	go c.writePump()
-}
-
-func (c *client) Close() {
+func (c *Client) Close() {
 	c.cancel()
 	c.wg.Wait()
 	close(c.launch)
 	c.conn.Close()
 }
 
-// readPump pumps messages from the websocket connection to the hub.
-func (c *client) readPump() {
-	defer c.cancel()
+func (c *Client) Read(ctx context.Context, wg *sync.WaitGroup, cancelFunc context.CancelFunc) {
+	wg.Add(1)
+	defer wg.Done()
 
 	c.conn.SetReadLimit(maxMessageSize)
-	c.conn.SetReadDeadline(time.Now().Add(pongWait))
+	err := c.conn.SetReadDeadline(time.Now().Add(pongWait))
+	if err != nil {
+		c.logger.Error(ctx, "error while setting deadline", err)
+	}
 	c.conn.SetPongHandler(func(string) error { c.conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
 	for {
 		_, message, err := c.conn.ReadMessage()
@@ -77,12 +89,16 @@ func (c *client) readPump() {
 		}
 		message = bytes.TrimSpace(bytes.Replace(message, newline, space, -1))
 		if bytes.Equal(message, []byte(internal.StopWord)) {
+			cancelFunc()
 			return
 		}
 	}
 }
 
-func (c *client) writePump() {
+func (c *Client) Write(ctx context.Context, wg *sync.WaitGroup) {
+	wg.Add(1)
+	defer wg.Done()
+
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
 		ticker.Stop()
@@ -90,28 +106,45 @@ func (c *client) writePump() {
 	for {
 		select {
 		case message, ok := <-c.launch:
-			c.logger.WithField("message", string(message)).Info(c.ctx, "sending message")
-			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			//c.logger.WithField("message", string(message)).Info(c.ctx, "sending message")
+			err := c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if err != nil {
+				c.logger.Error(ctx, "error while setting deadline", err)
+			}
 			if !ok {
 				// The hub closed the channel.
-				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				err := c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				if err != nil {
+					c.logger.Error(ctx, "error while writing message", err)
+				}
 				return
 			}
 
 			w, err := c.conn.NextWriter(websocket.TextMessage)
 			if err != nil {
+				c.logger.Error(ctx, "error while getting writer", err)
 				return
 			}
-			w.Write(message)
+			_, err = w.Write(message)
+			if err != nil {
+				c.logger.Error(ctx, "error while writing message", err)
+			}
 
 			// Add queued chat messages to the current websocket message.
 			n := len(c.launch)
 			for i := 0; i < n; i++ {
-				w.Write(newline)
-				w.Write(<-c.launch)
+				_, err = w.Write(newline)
+				if err != nil {
+					c.logger.Error(ctx, "error while writing newline", err)
+				}
+				_, err = w.Write(<-c.launch)
+				if err != nil {
+					c.logger.Error(ctx, "error while writing message", err)
+				}
 			}
 
 			if err := w.Close(); err != nil {
+				c.logger.Error(ctx, "error closing websocket connection", err)
 				return
 			}
 		case <-ticker.C:

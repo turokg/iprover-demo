@@ -8,26 +8,26 @@ import (
 	"backend/internal/ws"
 	"context"
 	"fmt"
-	"github.com/gorilla/websocket"
 	"net/http"
 	"net/url"
+	"sync"
 )
 
-func parseArgs(r *http.Request) (*launcher.LaunchArgs, error) {
+func parseArgs(r *http.Request) (launcher.LaunchArgs, error) {
+	args := launcher.LaunchArgs{}
 	ur, err := url.ParseRequestURI(r.RequestURI)
 	if err != nil {
-		return nil, err
+		return args, err
 	}
 	params, err := url.ParseQuery(ur.RawQuery)
 	if err != nil {
-		return nil, err
+		return args, err
 	}
 	if len(params["problemId"]) != 1 {
-		return nil, fmt.Errorf("couldn't parse query params")
+		return args, fmt.Errorf("couldn't parse query params")
 	}
-	return &launcher.LaunchArgs{
-		ProblemID: params["problemId"][0],
-	}, err
+	args.ProblemID = params["problemId"][0]
+	return args, err
 }
 
 func checkOrigin(r *http.Request) bool {
@@ -50,20 +50,6 @@ func New(logger internal.Logger, repo repository.Repo) api.Handler {
 func (h *handler) Handle(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(context.Background(), internal.RunTimeout)
 
-	upgrader := websocket.Upgrader{
-		ReadBufferSize:  1024,
-		WriteBufferSize: 1024,
-	}
-	upgrader.CheckOrigin = checkOrigin
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		msg := "unable to upgrade to webSockets"
-		w.WriteHeader(internal.StatusError)
-		w.Write([]byte(msg))
-		h.logger.Error(ctx, msg, err)
-		return
-	}
-
 	args, err := parseArgs(r)
 	if err != nil {
 		msg := "unable to parse args"
@@ -81,16 +67,24 @@ func (h *handler) Handle(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error(ctx, msg, err)
 		return
 	}
-
-	l := launcher.NewLauncher(h.logger)
-	msgs, err := l.Launch(ctx, *args)
+	output := make(chan []byte, internal.LaunchBuffer)
+	client, err := ws.NewClient(w, r, output, h.logger)
 	if err != nil {
-		msg := "unable to launch the process"
+		msg := "unable to upgrade to webSockets"
 		w.WriteHeader(internal.StatusError)
 		w.Write([]byte(msg))
 		h.logger.Error(ctx, msg, err)
 		return
 	}
-	client := ws.NewClient(ctx, conn, msgs, h.logger, cancel)
-	go client.Start()
+
+	l := launcher.NewLauncher(h.logger)
+
+	wg := &sync.WaitGroup{}
+	go l.Launch(ctx, wg, args, output)
+	go client.Read(ctx, wg, cancel)
+	go client.Write(ctx, wg)
+	wg.Wait()
+	// TODO почему не ждет то???
+
+	h.logger.Info(ctx, "handler finished")
 }

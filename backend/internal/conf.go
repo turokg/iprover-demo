@@ -6,7 +6,7 @@ const (
 	Addr = ":8080"
 
 	// RunTimeout task is killed after it
-	RunTimeout = time.Second * 60 * 10
+	RunTimeout = time.Second * 10 * 60
 	// KillTimeout wait after SIGINT, then process is killed
 	KillTimeout = time.Second * 700
 	// StopWord stops execution, after received in the websocked
@@ -16,5 +16,5 @@ const (
 	BinPath     = "/Users/eyukorovin/iprover/iprover/iproveropt"
 	ProblemsDir = "/Users/eyukorovin/iprover/iprover-demo/backend/problems/"
 
-	LaunchBuffer = 100 //TODO посмотри, наверно надо увеличить
+	LaunchBuffer = 1000 //TODO посмотри, наверно надо увеличить
 )
