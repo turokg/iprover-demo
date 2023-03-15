@@ -75,6 +75,7 @@ func (l *Launcher) Launch(ctx context.Context, wg *sync.WaitGroup, args internal
 	for scanner.Scan() {
 		m := scanner.Text()
 		l.output <- NewProcessLog(m)
+		//time.Sleep(time.Millisecond * 100)
 	}
 	l.logger.Info(ctx, "finished reading from stdin")
 

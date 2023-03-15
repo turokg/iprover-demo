@@ -30,5 +30,5 @@ const (
 type LogMessage struct {
 	Datetime time.Time `json:"time"`
 	Source   string    `json:"source"`
-	Message  string    `json:"message"`
+	Message  string    `json:"text"`
 }
